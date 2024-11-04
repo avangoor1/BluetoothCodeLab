@@ -49,7 +49,23 @@ class DeviceControlActivity : AppCompatActivity() {
         }
     }
 
+    private val dataReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            intent?.getStringExtra("EXTRA_DATA")?.let { data ->
+                runOnUiThread {
+                    // Update the UI with the received data
+                    findViewById<TextView>(R.id.information).text = data
+                }
+            }
+        }
+    }
 
+
+    override fun onStart() {
+        super.onStart()
+        val filter = IntentFilter("com.example.bluetooth.ACTION_DATA_RECEIVED")
+        registerReceiver(dataReceiver, filter)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
 
@@ -126,6 +142,11 @@ class DeviceControlActivity : AppCompatActivity() {
             addAction(BluetoothLeService.ACTION_GATT_CONNECTED)
             addAction(BluetoothLeService.ACTION_GATT_DISCONNECTED)
         }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        unregisterReceiver(dataReceiver)
     }
 
 

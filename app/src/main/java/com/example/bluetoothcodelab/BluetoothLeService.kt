@@ -217,6 +217,15 @@ class BluetoothLeService : Service() {
             // Convert byte array to a readable format if needed
             val stringValue = String(value, Charsets.UTF_8)
             Log.d("Characteristic String Value (Notification)", stringValue)
+
+            broadcastUpdate("com.example.bluetooth.ACTION_DATA_RECEIVED", stringValue)
+        }
+
+        //update the ui on the device control activity's information text view
+        private fun broadcastUpdate(action: String, data: String) {
+            val intent = Intent(action)
+            intent.putExtra("EXTRA_DATA", data)
+            sendBroadcast(intent)
         }
 
         override fun onCharacteristicWrite(
