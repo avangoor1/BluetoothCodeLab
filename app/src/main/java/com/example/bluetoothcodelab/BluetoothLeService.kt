@@ -160,6 +160,9 @@ class BluetoothLeService : Service() {
                                     Log.e("Descriptor", "Descriptor not found for ${characteristic_value.uuid}")
                                 }
 
+                                writeDataToDevice(gatt, characteristic, "43")
+                                Log.d("Send Data Over", "Success")
+
 //                                gatt.readCharacteristic(characteristic_value)
                             }
                         }

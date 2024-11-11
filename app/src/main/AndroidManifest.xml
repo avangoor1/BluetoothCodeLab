@@ -35,6 +35,14 @@
         </activity>
         <service android:name=".BluetoothLeService"
             android:exported="false" />
+
+<!--        <receiver-->
+<!--            android:name="d"-->
+<!--            android:enabled="true"-->
+<!--            android:exported="false">-->
+<!--        </receiver>-->
     </application>
+
+
 
 </manifest>
