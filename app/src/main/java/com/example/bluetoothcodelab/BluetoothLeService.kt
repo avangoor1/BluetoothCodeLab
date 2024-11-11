@@ -163,7 +163,6 @@ class BluetoothLeService : Service() {
                                 writeDataToDevice(gatt, characteristic, "43")
                                 Log.d("Send Data Over", "Success")
 
-//                                gatt.readCharacteristic(characteristic_value)
                             }
                         }
                     }
