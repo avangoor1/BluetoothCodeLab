@@ -219,7 +219,27 @@ class BluetoothLeService : Service() {
             // Convert byte array to a readable format if needed
             val stringValue = String(value, Charsets.UTF_8)
             Log.d("Characteristic String Value (Notification)", stringValue)
+
+            // Interpreting the Data
+            parseHexToDecimal(stringValue)
+
         }
+
+        fun parseHexToDecimal(hexData: String): Int {
+            // Convert each hex string to a decimal integer
+            Log.d("Int data", hexData.toInt(16).toString())
+            return hexData.toInt(16) // Convert from hex to decimal
+
+        }
+
+//        fun parseHexStringToBinary(hexString: String): String {
+//            // Process each hex pair (byte) and convert to binary
+//            return hexString.chunked(2) // Each chunk represents one byte
+//                .joinToString(separator = "") { hex ->
+//                    hex.toInt(16).toString(2).padStart(8, '0') // Convert to binary, pad to 8 bits
+//                }
+//        }
+
 
         override fun onCharacteristicWrite(
             gatt: BluetoothGatt,

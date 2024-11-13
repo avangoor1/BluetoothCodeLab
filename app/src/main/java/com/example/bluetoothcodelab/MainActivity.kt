@@ -192,7 +192,7 @@ class MainActivity : AppCompatActivity() {
                 // Print the device info to the log
                 Log.d("BluetoothDevice", "Device found: $deviceInfo")
 
-                if (result.device.name == ("BackPack Unit")){
+                if (result.device.name == ("BackPack Unit1")){
                     deviceName = result.device.name.toString()
                     deviceAddress = result.device.address.toString()
                 }
