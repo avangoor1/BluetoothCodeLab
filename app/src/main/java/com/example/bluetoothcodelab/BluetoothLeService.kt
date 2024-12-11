@@ -12,7 +12,10 @@ import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothGattService
 import android.bluetooth.BluetoothProfile
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.nfc.NfcAdapter.EXTRA_DATA
 import android.os.Binder
@@ -21,17 +24,43 @@ import android.os.IBinder
 import android.os.Looper
 import android.util.Log
 import androidx.core.app.ActivityCompat
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import com.example.bluetoothcodelab.data.ShockingDao
+import com.example.bluetoothcodelab.data.ShockingData
+import com.example.bluetoothcodelab.data.ShockingRoomDatabase
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.util.UUID
 
 private const val TAG = "BluetoothLeService"
 
 class BluetoothLeService : Service() {
 
+    private lateinit var roomDatabase: ShockingRoomDatabase
+    private lateinit var shockingDao: ShockingDao
 
 
     private var bluetoothAdapter: BluetoothAdapter? = null
     private var bluetoothGatt: BluetoothGatt? = null
     private var connectionState = STATE_DISCONNECTED
+
+    private var insert: Boolean = false  // Initialized with 'false'
+
+    private val stringArray = mutableListOf<String>()  // To store the received packets
+    private var isInPacket = false  // Flag to check if we are in the middle of a packet
+    private var currentPacket = StringBuilder()  // To accumulate bytes for the current packet
+    private val payload = StringBuilder()
+    private var headerCheck = StringBuilder()  // Temporary buffer to check for the header
+    val completePackets = mutableListOf<String>()
+    val packetMutableSet = mutableSetOf("")
+    var consecutive38Count = 0 // Counter for consecutive "38"
+    val endSequence = "38" // The value we're checking for
+    val header = "55AA" // Valid packet header
+
+    private var targetCharacteristic: BluetoothGattCharacteristic? = null
+    private var writeTarget : BluetoothGattCharacteristic? = null
+
 
     companion object {
         const val ACTION_GATT_CONNECTED =
@@ -49,12 +78,97 @@ class BluetoothLeService : Service() {
 
 
     fun initialize(): Boolean {
+        roomDatabase = ShockingRoomDatabase.getDatabase(applicationContext, CoroutineScope(
+            Dispatchers.Main))
+        shockingDao = roomDatabase.shockingDao()
+
+        //deleteAllData()
+
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
         if (bluetoothAdapter == null) {
             Log.e(TAG, "Unable to obtain a BluetoothAdapter.")
             return false
         }
+
+        val filter = IntentFilter("com.example.bluetoothcodelab.REQUEST_PACKET")
+        registerReceiver(broadcastReceiver, filter, RECEIVER_NOT_EXPORTED)
+
+
+        shockingDao.getLatestEntry().observeForever { latestEntry ->
+            latestEntry?.let {
+                // Handle the latest entry here
+                val row = it
+
+                if (row.requestPacket == true) {
+                    // write a 1 to the bluetooth
+                    bluetoothGatt?.let { it1 -> writeTarget?.let { it2 ->
+                        writeDataToDevice(it1,
+                            it2, "3")
+                    } }
+
+                    val shockingData = ShockingData(null, "", "", "", "", "", "", "", "", "", "", "", "0", "0", false, false, "-")
+                    // add this data to the database
+                    Log.d("Inserting data", shockingData.toString())
+                    var count = 0
+                    if (count == 0) {
+                        insertData(shockingData)
+                        count += 1
+                    }
+                }
+//
+//                // Store the handler to control the periodic task
+//                var handler: Handler? = null
+//
+//                // Start the periodic task if tickRate == "5"
+//                if (row.tickRate == "5") {
+//                    // If handler is null, start the periodic task
+//                    if (handler == null) {
+//                        handler = Handler(Looper.getMainLooper())
+//                        handler?.postDelayed(object : Runnable {
+//                            override fun run() {
+//                                // Your logic to perform every 5 seconds
+//                                if (row.tickRate == "5") {
+//                                    // Execute your action every 5 seconds
+//                                    bluetoothGatt?.let { it1 ->
+//                                        writeTarget?.let { it2 ->
+//                                            writeDataToDevice(it1, it2, "3")
+//                                        }
+//                                    }
+//
+//                                    // Schedule the next execution in 5 seconds
+//                                    handler?.postDelayed(this, 5000)
+//                                } else {
+//                                    // If tickRate is no longer "5", cancel the task
+//                                    handler?.removeCallbacks(this)
+//                                    handler = null  // Clear the handler to prevent further use
+//                                    Log.d("Task stopped", "Periodic task stopped as tickRate is no longer 5.")
+//                                }
+//                            }
+//                        }, 0) // Initial delay is 0, task runs immediately
+//                    }
+//                }
+//
+//                // Stop the periodic task if tickRate == "0"
+//                if (row.tickRate == "0") {
+//                    // If tickRate is "0", stop the periodic task
+//                    handler?.removeCallbacksAndMessages(null)
+//                    handler = null  // Clear the handler to ensure no future task is posted
+//                    Log.d("Task stopped", "Periodic task stopped as tickRate is 0.")
+//                }
+
+            }
+        }
+
         return true
+    }
+
+    //method to insert user into the database upon signup
+    private fun insertData(data: ShockingData) {
+        // Using a coroutine to insert the user into the database
+        CoroutineScope(Dispatchers.IO).launch {
+            shockingDao.insert(data)
+            Log.d("Database", "Data inserted: $data")
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -130,6 +244,12 @@ class BluetoothLeService : Service() {
                             Log.d("Characteristic UUID", characteristic.uuid.toString())
                             val characteristic_value = gatt.getService(service.uuid)
                                 ?.getCharacteristic(characteristic.uuid)
+                            targetCharacteristic = gatt.getService(service.uuid)?.getCharacteristic(characteristic.uuid)
+                            if (characteristic.uuid.toString() == "00002a59-0000-1000-8000-00805f9b34fb") {
+                                writeTarget = gatt.getService(service.uuid)?.getCharacteristic(characteristic.uuid)
+//                                writeDataToDevice(gatt, characteristic, "6")
+//                                Log.d("Send Data Over For 09 Packet", "Success")
+                            }
                             if (characteristic_value != null) {
                                 if (ActivityCompat.checkSelfPermission(
                                         this@BluetoothLeService,
@@ -159,9 +279,10 @@ class BluetoothLeService : Service() {
                                 } else {
                                     Log.e("Descriptor", "Descriptor not found for ${characteristic_value.uuid}")
                                 }
-
-                                writeDataToDevice(gatt, characteristic, "43")
-                                Log.d("Send Data Over", "Success")
+                                if (characteristic.uuid.toString() == "00002a58-0000-1000-8000-00805f9b34fb") {
+                                    writeDataToDevice(gatt, characteristic, "43")
+                                    Log.d("Send Data Over", "Success")
+                                }
 
                             }
                         }
@@ -212,6 +333,7 @@ class BluetoothLeService : Service() {
             gatt: BluetoothGatt,
             characteristic: BluetoothGattCharacteristic
         ) {
+
             // This method is called when a notification is received
             val value = characteristic.value
             Log.d("Characteristic Value (Notification)", value?.contentToString() ?: "No value")
@@ -220,9 +342,90 @@ class BluetoothLeService : Service() {
             val stringValue = String(value, Charsets.UTF_8)
             Log.d("Characteristic String Value (Notification)", stringValue)
 
+            if (!isInPacket) {
+                // Look for valid header (55AA)
+                if (currentPacket.length >= 4 && currentPacket.substring(0, 4) == header) {
+                    // Found valid header, start the packet
+                    isInPacket = true
+                    if (payload.isNotEmpty()) {
+                        completePackets.add(payload.toString()) // Add the completed packet to the list
+                        Log.d("Packet Completed: ", payload.toString())
+                    }
+                    payload.clear() // Clear any previous payload
+                    payload.append(currentPacket) // Include the header in the payload
+                    payload.append(stringValue) // Append the current byte to payload
+                    currentPacket.clear() // Reset current packet builder to start the payload
+                } else {
+                    // Accumulate bytes until the header is found
+                    currentPacket.append(stringValue)
+                    Log.d("Current Packet: ", currentPacket.toString())
+                }
+            } else {
+                // We're in a valid packet, continue collecting the payload
+                Log.d("String Value: ", stringValue)
+                payload.append(stringValue)
+                Log.d("Payload", payload.toString())
+
+                // Check for end condition (three consecutive 38s)
+                if (stringValue == endSequence) {
+                    Log.d("Going into end sequence", "good")
+                    consecutive38Count++
+                    if (consecutive38Count == 3) {
+                        // Packet is complete
+                        Log.d("Packet End Detected", "Packet ends after three consecutive 38s")
+                        isInPacket = false
+                        // Add the completed packet to the list
+                        completePackets.add(payload.toString())
+                        Log.d("Complete Packet: ", payload.toString())
+
+                        // Process the completed packet (optional)
+                        val timestamp = System.currentTimeMillis()
+                        val shockingData = ShockingData(
+                            null,
+                            timestamp.toString(),
+                            "",
+                            payload.substring(0, payload.length - 6).toString(),
+                            "",
+                            "",
+                            "",
+                            "",
+                            "",
+                            "",
+                            "",
+                            "",
+                            "",
+                            "",
+                            false,
+                            false,
+                            ""
+                        )
+
+                        insertData(shockingData)
+
+                        // Clear payload and reset counters
+                        payload.clear()
+                        consecutive38Count = 0
+                    }
+                } else {
+                    // Reset counter if sequence breaks
+                    consecutive38Count = 0
+                }
+            }
+
             // Interpreting the Data
             parseHexToDecimal(stringValue)
 
+
+        }
+
+
+        //method to insert user into the database upon signup
+        private fun insertData(data: ShockingData) {
+            // Using a coroutine to insert the user into the database
+            CoroutineScope(Dispatchers.IO).launch {
+                shockingDao.insert(data)
+                Log.d("Database", "Data inserted: $data")
+            }
         }
 
         fun parseHexToDecimal(hexData: String): Int {
@@ -231,15 +434,6 @@ class BluetoothLeService : Service() {
             return hexData.toInt(16) // Convert from hex to decimal
 
         }
-
-//        fun parseHexStringToBinary(hexString: String): String {
-//            // Process each hex pair (byte) and convert to binary
-//            return hexString.chunked(2) // Each chunk represents one byte
-//                .joinToString(separator = "") { hex ->
-//                    hex.toInt(16).toString(2).padStart(8, '0') // Convert to binary, pad to 8 bits
-//                }
-//        }
-
 
         override fun onCharacteristicWrite(
             gatt: BluetoothGatt,
@@ -253,6 +447,43 @@ class BluetoothLeService : Service() {
             }
         }
 
+    }
+
+    private val broadcastReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            Log.d("coming in to the onReceive", "success")
+            if (intent.action == "com.example.bluetoothcodelab.REQUEST_PACKET") {
+
+                // Write to the characteristic
+                targetCharacteristic?.let { characteristic ->
+                    characteristic.value = byteArrayOf(0x31)
+                    if (ActivityCompat.checkSelfPermission(
+                            this@BluetoothLeService,
+                            Manifest.permission.BLUETOOTH_CONNECT
+                        ) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        // TODO: Consider calling
+                        //    ActivityCompat#requestPermissions
+                        // here to request the missing permissions, and then overriding
+                        //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+                        //                                          int[] grantResults)
+                        // to handle the case where the user grants the permission. See the documentation
+                        // for ActivityCompat#requestPermissions for more details.
+                        return
+                    }
+                    bluetoothGatt?.writeCharacteristic(characteristic)
+                    Log.d("BluetoothLeService", "Writing to characteristic: ${characteristic.uuid}")
+
+                }
+            }
+        }
+    }
+
+    private fun deleteAllData() {
+        CoroutineScope(Dispatchers.IO).launch {
+            shockingDao.deleteAll()
+            Log.d("Database", "All deleted")
+        }
     }
 
     fun getSupportedGattServices(): List<BluetoothGattService?>? {
@@ -275,12 +506,11 @@ class BluetoothLeService : Service() {
         // Write the characteristic
         val writeSuccess = gatt.writeCharacteristic(characteristic)
         if (writeSuccess) {
-            Log.d("Bluetooth Write", "Write successful")
+            Log.d("Bluetooth Write", data)
         } else {
-            Log.w("Bluetooth Write", "Write failed")
+            Log.w("Bluetooth Write", "Write Failed")
         }
     }
-
 
 
     override fun onUnbind(intent: Intent?): Boolean {

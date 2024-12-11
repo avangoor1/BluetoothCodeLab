@@ -37,6 +37,8 @@ class MainActivity : AppCompatActivity() {
     private var deviceName : String = ""
     private var deviceAddress : String = ""
 
+    private var sessionName : String = ""
+
 
     private val handler = Handler()
     private var scanning = false
@@ -54,6 +56,10 @@ class MainActivity : AppCompatActivity() {
         initializeBluetooth()
         setupListView()
         registerBluetoothEnableLauncher()
+
+        sessionName = intent.getStringExtra("Session").toString()
+        Log.d("New Session", sessionName)
+
 
         if (bluetoothAdapter?.isEnabled == false) {
             requestBluetoothPermission()
@@ -165,6 +171,7 @@ class MainActivity : AppCompatActivity() {
             Log.d("Bruh TV", "sending over intent")
             val intent = Intent(this@MainActivity, DeviceControlActivity::class.java)
             intent.putExtra("DeviceAddress", deviceAddress)
+            intent.putExtra("SessionName", sessionName)
             Log.d("Bruh Intent", deviceAddress)
             startActivity(intent)
         }
